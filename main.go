@@ -22,7 +22,10 @@ var LivePrefixState struct {
 var mode = ""
 var liveArg = ""
 var loadMatch = regexp.MustCompile(`^load`)
+var trimMatch = regexp.MustCompile(`^trim`)
 var fileSlots = [10]string{}
+var sampleStarts = [10]int{}
+var sampleLengths = [10]int64{}
 
 func executor(in string) {
 	if LivePrefixState.IsEnable {
@@ -33,6 +36,17 @@ func executor(in string) {
       slot, _ := strconv.Atoi(in)
       fmt.Printf("Loading %v into slot %v\n", fname, slot)
       fileSlots[slot] = fname
+      sampleStarts[slot] = 0
+      sampleLengths[slot] = 44100
+    case "trim":
+      if len(in) > 0 {
+        slot, _ := strconv.Atoi(liveArg)
+        amount, _ := strconv.Atoi(in)
+        fmt.Printf("Changing slot %v by amount %v\n", slot, amount)
+        sampleLengths[slot] += int64(amount)
+        run(slot)
+        return
+      }
     }
     mode = ""
 		LivePrefixState.IsEnable = false
@@ -42,6 +56,9 @@ func executor(in string) {
   switch {
   case loadMatch.MatchString(in):
     mode = "load"
+    liveArg = in[5:len(in)]
+  case trimMatch.MatchString(in):
+    mode = "trim"
     liveArg = in[5:len(in)]
   default:
 		LivePrefixState.IsEnable = false
@@ -67,11 +84,17 @@ func completer(in prompt.Document) []prompt.Suggest {
         for _, f := range files {
           s = append(s, prompt.Suggest{Text: f.Name(), Description: ""})
         }
+      case trimMatch.MatchString(in.Text):
+        fmt.Println("trim match")
+        for i := 0; i <= 9; i++ {
+          s = append(s, prompt.Suggest{Text: strconv.Itoa(i), Description: ""})
+        }
       default:
         s = []prompt.Suggest{
           {Text: "slice", Description: "enter slice mode"},
           {Text: "play", Description: "enter play mode"},
           {Text: "load", Description: "load file"},
+          {Text: "trim", Description: "trim length"},
         }
       }
     }
@@ -109,7 +132,6 @@ var (
 
 func run(slot int) error {
   fname := fileSlots[slot]
-  fmt.Printf("Loading %v from slot %v\n", fname, slot)
 	f, err := os.Open(fname)
 	if err != nil {
 		return err
@@ -120,6 +142,7 @@ func run(slot int) error {
 	if err != nil {
 		return err
 	}
+  d.Seek(0, sampleStarts[slot])
 
 	p := c.NewPlayer()
 	if err != nil {
@@ -127,7 +150,7 @@ func run(slot int) error {
 	}
 	defer p.Close()
 
-	if _, err := io.CopyN(p, d, 44000); err != nil {
+	if _, err := io.CopyN(p, d, sampleLengths[slot]); err != nil {
 		return err
 	}
 	return nil
