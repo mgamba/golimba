@@ -23,6 +23,7 @@ var mode = ""
 var liveArg = ""
 var loadMatch = regexp.MustCompile(`^load`)
 var trimMatch = regexp.MustCompile(`^trim`)
+var seekMatch = regexp.MustCompile(`^seek`)
 var fileSlots = [10]string{}
 var sampleStarts = [10]int{}
 var sampleLengths = [10]int64{}
@@ -43,7 +44,16 @@ func executor(in string) {
         slot, _ := strconv.Atoi(liveArg)
         amount, _ := strconv.Atoi(in)
         fmt.Printf("Changing slot %v by amount %v\n", slot, amount)
-        sampleLengths[slot] += int64(amount)
+        sampleLengths[slot] = max(sampleLengths[slot] + int64(amount), 0)
+        run(slot)
+        return
+      }
+    case "seek":
+      if len(in) > 0 {
+        slot, _ := strconv.Atoi(liveArg)
+        amount, _ := strconv.Atoi(in)
+        fmt.Printf("Changing slot %v start by amount %v\n", slot, amount)
+        sampleStarts[slot] += amount
         run(slot)
         return
       }
@@ -59,6 +69,9 @@ func executor(in string) {
     liveArg = in[5:len(in)]
   case trimMatch.MatchString(in):
     mode = "trim"
+    liveArg = in[5:len(in)]
+  case seekMatch.MatchString(in):
+    mode = "seek"
     liveArg = in[5:len(in)]
   default:
 		LivePrefixState.IsEnable = false
@@ -84,8 +97,7 @@ func completer(in prompt.Document) []prompt.Suggest {
         for _, f := range files {
           s = append(s, prompt.Suggest{Text: f.Name(), Description: ""})
         }
-      case trimMatch.MatchString(in.Text):
-        fmt.Println("trim match")
+      case trimMatch.MatchString(in.Text) || seekMatch.MatchString(in.Text):
         for i := 0; i <= 9; i++ {
           s = append(s, prompt.Suggest{Text: strconv.Itoa(i), Description: ""})
         }
@@ -95,6 +107,7 @@ func completer(in prompt.Document) []prompt.Suggest {
           {Text: "play", Description: "enter play mode"},
           {Text: "load", Description: "load file"},
           {Text: "trim", Description: "trim length"},
+          {Text: "seek", Description: "sample start"},
         }
       }
     }
@@ -142,7 +155,8 @@ func run(slot int) error {
 	if err != nil {
 		return err
 	}
-  d.Seek(0, sampleStarts[slot])
+
+  d.Seek(min(int64(sampleStarts[slot]), d.Length()-1), 0)
 
 	p := c.NewPlayer()
 	if err != nil {
@@ -154,4 +168,18 @@ func run(slot int) error {
 		return err
 	}
 	return nil
+}
+
+func min(x, y int64) int64 {
+    if x > y {
+        return y
+    }
+    return x
+}
+
+func max(x, y int64) int64 {
+    if x < y {
+        return y
+    }
+    return x
 }
