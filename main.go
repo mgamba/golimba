@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
   "io/ioutil"
@@ -27,6 +28,26 @@ var seekMatch = regexp.MustCompile(`^seek`)
 var fileSlots = [10]string{}
 var sampleStarts = [10]int{}
 var sampleLengths = [10]int64{}
+var samples = [10][]byte{}
+
+func loadSample(slot int) error {
+  fname := fileSlots[slot]
+	f, err := os.Open(fname)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	d, err := mp3.NewDecoder(f)
+	if err != nil {
+		return err
+	}
+
+  samples[slot] = make([]byte, d.Length())
+  io.ReadFull(d, samples[slot])
+
+  return nil
+}
 
 func executor(in string) {
 	if LivePrefixState.IsEnable {
@@ -39,6 +60,7 @@ func executor(in string) {
       fileSlots[slot] = fname
       sampleStarts[slot] = 0
       sampleLengths[slot] = 44100
+      loadSample(slot)
     case "trim":
       if len(in) > 0 {
         slot, _ := strconv.Atoi(liveArg)
@@ -144,24 +166,10 @@ var (
 )
 
 func run(slot int) error {
-  fname := fileSlots[slot]
-	f, err := os.Open(fname)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	d, err := mp3.NewDecoder(f)
-	if err != nil {
-		return err
-	}
-
-  d.Seek(min(int64(sampleStarts[slot]), d.Length()-1), 0)
+  d := bytes.NewReader(samples[slot])
+  d.Seek(int64(sampleStarts[slot]), 0)
 
 	p := c.NewPlayer()
-	if err != nil {
-		return err
-	}
 	defer p.Close()
 
 	if _, err := io.CopyN(p, d, sampleLengths[slot]); err != nil {
