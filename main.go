@@ -22,6 +22,7 @@ var LivePrefixState struct {
 var mode = ""
 var liveArg = ""
 var loadMatch = regexp.MustCompile(`^load`)
+var fileSlots = [10]string{}
 
 func executor(in string) {
 	if LivePrefixState.IsEnable {
@@ -29,33 +30,33 @@ func executor(in string) {
     switch mode {
     case "load":
       fname := liveArg
-      slot := in
+      slot, _ := strconv.Atoi(in)
       fmt.Printf("Loading %v into slot %v\n", fname, slot)
+      fileSlots[slot] = fname
     }
     mode = ""
 		LivePrefixState.IsEnable = false
 		LivePrefixState.LivePrefix = ""
     return
   }
-	if in == "" {
-		LivePrefixState.IsEnable = false
-		LivePrefixState.LivePrefix = in
-		return
-	}
-	LivePrefixState.LivePrefix = in + "> "
-	LivePrefixState.IsEnable = true
   switch {
   case loadMatch.MatchString(in):
     mode = "load"
-    liveArg = in[5:len(in)-1]
+    liveArg = in[5:len(in)]
+  default:
+		LivePrefixState.IsEnable = false
+		LivePrefixState.LivePrefix = ""
+		return
   }
+	LivePrefixState.LivePrefix = in + "> "
+	LivePrefixState.IsEnable = true
 }
 
 func completer(in prompt.Document) []prompt.Suggest {
   s := []prompt.Suggest{}
   if len(in.Text) > 0 && !LivePrefixState.IsEnable {
-    if _, err := strconv.Atoi(in.Text); err == nil {
-      go run()
+    if slot, err := strconv.Atoi(string(in.Text[len(in.Text)-1])); err == nil {
+      go run(slot)
     } else {
       switch {
       case loadMatch.MatchString(in.Text):
@@ -106,8 +107,10 @@ var (
 	c, _ = oto.NewContext(44100, 2, 2, 8192)
 )
 
-func run() error {
-	f, err := os.Open("kit.mp3")
+func run(slot int) error {
+  fname := fileSlots[slot]
+  fmt.Printf("Loading %v from slot %v\n", fname, slot)
+	f, err := os.Open(fname)
 	if err != nil {
 		return err
 	}
